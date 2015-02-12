@@ -1,0 +1,16 @@
+[
+{
+  "modid": "MetaDump",
+  "name": "MetaDump",
+  "description": "Dumps block and biome information to JSON text files when Minecraft starts.",
+  "version": "$version",
+  "mcversion": "$mcversion",
+  "url": "http://unmined.intro.hu",
+  "updateUrl": "",
+  "authorList": ["megasys"],
+  "credits": "",
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": []
+}
+]
