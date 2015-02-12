@@ -32,10 +32,8 @@ import java.io.UnsupportedEncodingException;
 
 import net.minecraftforge.common.BiomeDictionary;
 import static net.minecraftforge.common.BiomeDictionary.Type;
-
 import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
-import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.StatCollector;
@@ -43,22 +41,23 @@ import net.minecraft.world.biome.BiomeGenBase;
 import net.minecraftforge.common.BiomeDictionary;
 import net.minecraftforge.common.ForgeVersion;
 import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.fml.common.FMLContainer;
-import net.minecraftforge.fml.common.Loader;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.common.Mod.EventHandler;
-import net.minecraftforge.fml.common.ModContainer;
-import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
-import net.minecraftforge.fml.common.registry.FMLControlledNamespacedRegistry;
-import net.minecraftforge.fml.common.registry.GameData;
 
 import com.google.gson.stream.JsonWriter;
+
+import cpw.mods.fml.common.event.FMLPostInitializationEvent;
+import cpw.mods.fml.common.registry.FMLControlledNamespacedRegistry;
+import cpw.mods.fml.common.registry.GameData;
+import cpw.mods.fml.common.registry.GameData.GameDataSnapshot;
+import cpw.mods.fml.common.Loader;
+import cpw.mods.fml.common.Mod;
+import cpw.mods.fml.common.Mod.EventHandler;
+import cpw.mods.fml.common.ModContainer;
 
 /**
  * @author megasys
  * 
- * Dumps metadata information to JSON files at postInit() 
- *  
+ *         Dumps metadata information to JSON files at postInit()
+ * 
  */
 @Mod(modid = MetaDumpMod.MOD_ID, name = MetaDumpMod.MOD_NAME, version = MetaDumpMod.MOD_VERSION)
 public class MetaDumpMod {
@@ -156,21 +155,21 @@ public class MetaDumpMod {
 		try {
 			JsonWriter writer = new JsonWriter(new OutputStreamWriter(
 					new FileOutputStream(FILENAME_VERSION), "UTF-8"));
-			
+
 			Loader loader = Loader.instance();
 
 			writer.setIndent(JSON_INDENT);
 			writer.beginObject();
-				
+
 			writer.name("MCVersionString");
 			writer.value(loader.getMCVersionString());
 
 			writer.name("MCPVersionString");
 			writer.value(loader.getMCPVersionString());
-			
+
 			writer.name("FMLVersionString");
 			writer.value(loader.getFMLVersionString());
-			
+
 			writer.name("ActiveModList");
 			writeActiveModListArray(writer);
 
@@ -258,19 +257,10 @@ public class MetaDumpMod {
 		String[] colors = new String[16];
 		boolean isAllEqual = true;
 		for (int i = 0; i < 16; i++) {
-			IBlockState state = null;
-			try {
-				state = block.getStateFromMeta(i);
-			} catch (Exception e) {
-			}
+			colors[i] = String.format("#%06X", block.getMapColor(i).colorValue);
 
-			if (state != null) {
-				colors[i] = String.format("#%06X",
-						block.getMapColor(state).colorValue);
-
-				if (i > 0 && isAllEqual && !colors[i].equals(colors[0]))
-					isAllEqual = false;
-			}
+			if (i > 0 && isAllEqual && !colors[i].equals(colors[0]))
+				isAllEqual = false;
 		}
 		if (isAllEqual) {
 			writer.name("MapColor");
