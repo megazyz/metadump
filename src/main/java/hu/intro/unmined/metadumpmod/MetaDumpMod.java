@@ -29,14 +29,18 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.UnsupportedEncodingException;
+import java.util.ArrayList;
+import java.util.HashSet;
 
 import net.minecraftforge.common.BiomeDictionary;
 import static net.minecraftforge.common.BiomeDictionary.Type;
-
 import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
+import net.minecraft.creativetab.CreativeTabs;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.biome.BiomeGenBase;
@@ -57,26 +61,27 @@ import com.google.gson.stream.JsonWriter;
 /**
  * @author megasys
  * 
- * Dumps metadata information to JSON files at postInit() 
- *  
+ *         Dumps metadata information to JSON files at postInit()
+ * 
  */
 @Mod(modid = MetaDumpMod.MOD_ID, name = MetaDumpMod.MOD_NAME, version = MetaDumpMod.MOD_VERSION)
 public class MetaDumpMod {
 
 	public static final String MOD_ID = "MetaDump";
 	public static final String MOD_NAME = "MetaDump";
-	public static final String MOD_VERSION = "1.0.0";
+	public static final String MOD_VERSION = "1.0.1";
 
-	public static final String FILENAME_BIOMES = "metadump.biomes.txt";
-	public static final String FILENAME_BLOCKS = "metadump.blocks.txt";
-	public static final String FILENAME_VERSION = "metadump.version.txt";
+	public static final String FILENAME_BIOMES = "metadump-biomes-%s.json";
+	public static final String FILENAME_BLOCKS = "metadump-blocks-%s-%s.json";
+	public static final String FILENAME_VERSION = "metadump-version-%s.json";
 
 	private static final String JSON_INDENT = "  ";
 
 	private void dumpBiomes() {
 		try {
 			JsonWriter writer = new JsonWriter(new OutputStreamWriter(
-					new FileOutputStream(FILENAME_BIOMES), "UTF-8"));
+					new FileOutputStream(String.format(FILENAME_BIOMES,
+							Loader.MC_VERSION)), "UTF-8"));
 
 			writer.setIndent(JSON_INDENT);
 			writer.beginObject();
@@ -112,36 +117,72 @@ public class MetaDumpMod {
 			FMLControlledNamespacedRegistry<Block> blockRegistry = GameData
 					.getBlockRegistry();
 
-			JsonWriter writer = new JsonWriter(new OutputStreamWriter(
-					new FileOutputStream(FILENAME_BLOCKS), "UTF-8"));
+			HashSet<String> mods = new HashSet<String>();
 
-			writer.setIndent(JSON_INDENT);
-			writer.beginObject();
-
-			writer.name("Blocks");
-			writer.beginArray();
 			for (int id = 0; id < 4096; id++) {
 				Block block = blockRegistry.getObjectById(id);
-				if (block == null
-						|| block.getUnlocalizedName().equals("tile.air"))
-					continue;
+				if (block != null) {
+					String blockName = blockRegistry.getNameForObject(block)
+							.toString();
+					String modName = blockName.substring(0,
+							blockName.indexOf(":"));
+					mods.add(modName);
+				}
+			}
 
+			for (String modName : mods) {
+
+				String modNameAndVersion = getSafeModNameAndVersion(modName);
+				JsonWriter writer = new JsonWriter(
+						new OutputStreamWriter(new FileOutputStream(
+								String.format(FILENAME_BLOCKS,
+										Loader.MC_VERSION, modNameAndVersion)),
+								"UTF-8"));
+
+				writer.setIndent(JSON_INDENT);
 				writer.beginObject();
 
-				writer.name("Id");
-				writer.value(id);
+				writer.name("Blocks");
+				writer.beginArray();
+				for (int id = 0; id < 4096; id++) {
+					Block block = blockRegistry.getObjectById(id);
+					if (block == null
+							|| block.getUnlocalizedName().equals("tile.air"))
+						continue;
 
-				writer.name("Name");
-				writer.value(blockRegistry.getNameForObject(block).toString());
+					String blockName = blockRegistry.getNameForObject(block)
+							.toString();
+					if (!blockName.startsWith(modName + ":"))
+						continue;
 
-				writeBlockProperties(writer, block);
+					writer.beginObject();
+
+					writer.name("Id");
+					writer.value(id);
+
+					writer.name("Name");
+					writer.value(blockName);
+
+					writeBlockProperties(writer, block);
+
+					writer.name("HasSubTypes");
+					Item item = Item.getItemFromBlock(block);
+
+					if (item != null && item.getHasSubtypes()) {
+						writer.value(true);
+
+						writeSubBlocks(writer, block, item);
+					} else {
+						writer.value(false);
+					}
+
+					writer.endObject();
+				}
+				writer.endArray();
 
 				writer.endObject();
+				writer.close();
 			}
-			writer.endArray();
-
-			writer.endObject();
-			writer.close();
 
 		} catch (UnsupportedEncodingException e) {
 			e.printStackTrace();
@@ -155,22 +196,23 @@ public class MetaDumpMod {
 	private void dumpVersionInfo() {
 		try {
 			JsonWriter writer = new JsonWriter(new OutputStreamWriter(
-					new FileOutputStream(FILENAME_VERSION), "UTF-8"));
-			
+					new FileOutputStream(String.format(FILENAME_VERSION,
+							Loader.MC_VERSION)), "UTF-8"));
+
 			Loader loader = Loader.instance();
 
 			writer.setIndent(JSON_INDENT);
 			writer.beginObject();
-				
+
 			writer.name("MCVersionString");
 			writer.value(loader.getMCVersionString());
 
 			writer.name("MCPVersionString");
 			writer.value(loader.getMCPVersionString());
-			
+
 			writer.name("FMLVersionString");
 			writer.value(loader.getFMLVersionString());
-			
+
 			writer.name("ActiveModList");
 			writeActiveModListArray(writer);
 
@@ -184,6 +226,24 @@ public class MetaDumpMod {
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
+	}
+
+	private String getSafeModNameAndVersion(String modName) {
+		String escapedModName = modName.replaceAll("\\W+", "_");
+		String modNameAndVersion = escapedModName;
+
+		if (modName.equals("minecraft")) {
+			modNameAndVersion += "-" + Loader.MC_VERSION;
+		} else {
+			for (ModContainer modContainer : Loader.instance()
+					.getActiveModList()) {
+				if (modContainer.getModId().equals(modName)) {
+					modNameAndVersion += "-" + modContainer.getVersion();
+					break;
+				}
+			}
+		}
+		return modNameAndVersion;
 	}
 
 	@EventHandler
@@ -237,6 +297,9 @@ public class MetaDumpMod {
 			writer.endArray();
 		}
 
+		writer.name("Color");
+		writer.value(String.format("#%06X", biome.color));
+
 		writer.name("WaterColorMultiplier");
 		writer.value(String.format("#%06x", biome.getWaterColorMultiplier()));
 
@@ -289,7 +352,7 @@ public class MetaDumpMod {
 			throws IOException {
 
 		writer.name("UnlocalizedName");
-		writer.value(StatCollector.translateToLocal(block.getUnlocalizedName()));
+		writer.value(block.getUnlocalizedName());
 
 		writer.name("LocalizedName");
 		writer.value(StatCollector.translateToLocal(block.getLocalizedName()));
@@ -302,6 +365,42 @@ public class MetaDumpMod {
 
 		writer.name("LightValue");
 		writer.value(block.getLightValue());
+
+		writer.name("IsOpaqueCube");
+		writer.value(block.isOpaqueCube());
+
+		writer.name("IsFullBlock");
+		writer.value(block.isFullBlock());
+
+		writer.name("IsFullCube");
+		writer.value(block.isFullCube());
+
+		writer.name("IsNormalCube");
+		writer.value(block.isNormalCube());
+
+		writer.name("IsSolidFullCube");
+		writer.value(block.isSolidFullCube());
+
+		writer.name("IsOpaqueCube");
+		writer.value(block.isOpaqueCube());
+
+		writer.name("IsTranslucent");
+		writer.value(block.isTranslucent());
+
+		writer.name("IsVisuallyOpaque");
+		writer.value(block.isVisuallyOpaque());
+
+		writer.name("RenderType");
+		writer.value(block.getRenderType());
+
+		writer.name("IsCollidable");
+		writer.value(block.isCollidable());
+
+		writer.name("IsFlowerPot");
+		writer.value(block.isFlowerPot());
+
+		writer.name("UseNeighborBrightness");
+		writer.value(block.getUseNeighborBrightness());
 
 		writer.name("Material");
 		writer.beginObject();
@@ -337,5 +436,35 @@ public class MetaDumpMod {
 
 		writer.name("CanBurn");
 		writer.value(material.getCanBurn());
+	}
+
+	private void writeSubBlocks(JsonWriter writer, Block block, Item item)
+			throws IOException {
+		ArrayList<ItemStack> list = new ArrayList<ItemStack>();
+		try {
+			item.getSubItems(item, CreativeTabs.tabAllSearch, list);
+		} catch (Exception e) {
+			writer.name("SubBlocksException");
+			writer.value(e.toString());
+			return;
+		}
+
+		writer.name("SubBlocks");
+		writer.beginArray();
+		for (ItemStack i : list) {
+			writer.beginObject();
+
+			writer.name("ItemDamage");
+			writer.value(i.getItemDamage());
+
+			writer.name("DisplayName");
+			writer.value(i.getDisplayName());
+
+			writer.name("UnlocalizedName");
+			writer.value(i.getUnlocalizedName());
+
+			writer.endObject();
+		}
+		writer.endArray();
 	}
 }
