@@ -237,7 +237,7 @@ public class MetaDumpMod {
 		} else {
 			for (ModContainer modContainer : Loader.instance()
 					.getActiveModList()) {
-				if (modContainer.getModId().equals(modName)) {
+				if (modContainer.getModId().toUpperCase().equals(modName.toUpperCase())) {
 					modNameAndVersion += "-" + modContainer.getVersion();
 					break;
 				}
@@ -352,7 +352,7 @@ public class MetaDumpMod {
 			throws IOException {
 
 		writer.name("UnlocalizedName");
-		writer.value(block.getUnlocalizedName());
+		writer.value(StatCollector.translateToLocal(block.getUnlocalizedName()));
 
 		writer.name("LocalizedName");
 		writer.value(StatCollector.translateToLocal(block.getLocalizedName()));
@@ -458,10 +458,10 @@ public class MetaDumpMod {
 			writer.value(i.getItemDamage());
 
 			writer.name("DisplayName");
-			writer.value(i.getDisplayName());
+			writer.value(StatCollector.translateToLocal(i.getDisplayName()));
 
 			writer.name("UnlocalizedName");
-			writer.value(i.getUnlocalizedName());
+			writer.value(StatCollector.translateToLocal(i.getUnlocalizedName()));
 
 			writer.endObject();
 		}
