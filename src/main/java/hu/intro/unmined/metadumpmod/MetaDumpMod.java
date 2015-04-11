@@ -55,9 +55,10 @@ import net.minecraftforge.common.MinecraftForge;
 import com.google.gson.stream.JsonWriter;
 
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
-import cpw.mods.fml.common.registry.FMLControlledNamespacedRegistry;
+import cpw.mods.fml.common.registry.GameRegistry;
 import cpw.mods.fml.common.registry.GameData;
-import cpw.mods.fml.common.registry.GameData.GameDataSnapshot;
+import cpw.mods.fml.common.registry.GameRegistry.UniqueIdentifier;
+import cpw.mods.fml.common.registry.ItemData;
 import cpw.mods.fml.common.registry.LanguageRegistry;
 import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.Mod;
@@ -82,12 +83,15 @@ public class MetaDumpMod {
 	public static final String FILENAME_VERSION = "metadump-version-%s.json";
 
 	private static final String JSON_INDENT = "  ";
+	
+	private String MCVersionString = "";
 
 	private void dumpBiomes() {
 		try {
+			
 			JsonWriter writer = new JsonWriter(new OutputStreamWriter(
 					new FileOutputStream(String.format(FILENAME_BIOMES,
-							Loader.MC_VERSION)), "UTF-8"));
+							this.MCVersionString)), "UTF-8"));
 
 			writer.setIndent(JSON_INDENT);
 			writer.beginObject();
@@ -95,7 +99,7 @@ public class MetaDumpMod {
 			writer.name("Biomes");
 			writer.beginArray();
 
-			for (BiomeGenBase biome : BiomeGenBase.getBiomeGenArray()) {
+			for (BiomeGenBase biome : BiomeGenBase.biomeList) {
 				if (biome == null)
 					continue;
 
@@ -120,19 +124,17 @@ public class MetaDumpMod {
 
 	private void dumpBlocks() {
 		try {
-			FMLControlledNamespacedRegistry<Block> blockRegistry = GameData
-					.getBlockRegistry();
-
 			HashSet<String> mods = new HashSet<String>();
+			mods.add("minecraft");
 
-			for (int id = 0; id < 4096; id++) {
-				Block block = blockRegistry.getObjectById(id);
-				if (block != null) {
-					String blockName = blockRegistry.getNameForObject(block)
-							.toString();
-					String modName = blockName.substring(0,
-							blockName.indexOf(":"));
-					mods.add(modName);
+			for (Block block : Block.blocksList) {
+				if (block != null && block.blockID != 0) {
+					UniqueIdentifier uid = GameRegistry.findUniqueIdentifierFor(block);
+					if (uid != null)
+					{
+						String modName = uid.modId;
+						mods.add(modName);
+					}
 				}
 			}
 
@@ -142,7 +144,7 @@ public class MetaDumpMod {
 				JsonWriter writer = new JsonWriter(
 						new OutputStreamWriter(new FileOutputStream(
 								String.format(FILENAME_BLOCKS,
-										Loader.MC_VERSION, modNameAndVersion)),
+										this.MCVersionString, modNameAndVersion)),
 								"UTF-8"));
 
 				writer.setIndent(JSON_INDENT);
@@ -150,30 +152,33 @@ public class MetaDumpMod {
 
 				writer.name("Blocks");
 				writer.beginArray();
-				for (int id = 0; id < 4096; id++) {
-					Block block = blockRegistry.getObjectById(id);
-					if (block == null
-							|| block.getUnlocalizedName().equals("tile.air"))
+				for (Block block : Block.blocksList) {
+					if (block == null || block.blockID == 0 || block.getUnlocalizedName().equals("tile.air"))
 						continue;
 
-					String blockName = blockRegistry.getNameForObject(block)
-							.toString();
-					if (!blockName.startsWith(modName + ":"))
+					UniqueIdentifier blockUID = GameRegistry.findUniqueIdentifierFor(block);
+					if (blockUID == null && modName != "minecraft") 
+						continue;
+					
+					if (blockUID != null && modName != blockUID.modId)
 						continue;
 
 					writer.beginObject();
 
 					writer.name("Id");
-					writer.value(id);
+					writer.value(block.blockID);
 
 					writer.name("Name");
-					writer.value(blockName);
+					if (blockUID == null)
+						writer.value(block.blockID);
+					else
+						writer.value(blockUID.modId + ":" + blockUID.name);
 
 					writeBlockProperties(writer, block);
 
 					writer.name("HasSubTypes");
-					Item item = Item.getItemFromBlock(block);
-
+					Item item = getItemFromBlock(block);
+								
 					if (item != null && item.getHasSubtypes()) {
 						writer.value(true);
 
@@ -198,12 +203,21 @@ public class MetaDumpMod {
 			e.printStackTrace();
 		}
 	}
+	
+	private Item getItemFromBlock(Block block) {
+		for (Item item : Item.itemsList){
+			if (item != null && item.itemID == block.blockID)
+				return item;
+		}
+		
+		return null;
+	}
 
 	private void dumpVersionInfo() {
 		try {
 			JsonWriter writer = new JsonWriter(new OutputStreamWriter(
 					new FileOutputStream(String.format(FILENAME_VERSION,
-							Loader.MC_VERSION)), "UTF-8"));
+							this.MCVersionString)), "UTF-8"));
 
 			Loader loader = Loader.instance();
 
@@ -239,7 +253,7 @@ public class MetaDumpMod {
 		String modNameAndVersion = escapedModName;
 
 		if (modName.equals("minecraft")) {
-			modNameAndVersion += "-" + Loader.MC_VERSION;
+			modNameAndVersion += "-" + this.MCVersionString;
 		} else {
 			for (ModContainer modContainer : Loader.instance()
 					.getActiveModList()) {
@@ -254,6 +268,8 @@ public class MetaDumpMod {
 
 	@EventHandler
 	public void postInit(FMLPostInitializationEvent event) {
+		this.MCVersionString = Loader.instance().getMCVersionString().replace("Minecraft ", "");
+		
 		dumpVersionInfo();
 		dumpBlocks();
 		dumpBiomes();
@@ -315,34 +331,11 @@ public class MetaDumpMod {
 		writer.name("SpawningChance");
 		writer.value(biome.getSpawningChance());
 
-		writer.name("TempCategory");
-		writer.value(biome.getTempCategory().toString());
+		writer.name("Temperature");
+		writer.value(biome.temperature);
 
 		writer.name("Class");
 		writeClassArray(writer, biome.getClass(), BiomeGenBase.class);
-	}
-
-	private void writeBlockMapColors(JsonWriter writer, Block block)
-			throws IOException {
-		String[] colors = new String[16];
-		boolean isAllEqual = true;
-		for (int i = 0; i < 16; i++) {
-			colors[i] = String.format("#%06X", block.getMapColor(i).colorValue);
-
-			if (i > 0 && isAllEqual && !colors[i].equals(colors[0]))
-				isAllEqual = false;
-		}
-		if (isAllEqual) {
-			writer.name("MapColor");
-			writer.value(colors[0]);
-		} else {
-			writer.name("MapColors");
-			writer.beginArray();
-			for (int i = 0; i < 16; i++) {
-				writer.value(colors[i]);
-			}
-			writer.endArray();
-		}
 	}
 
 	private void writeBlockProperties(JsonWriter writer, Block block)
@@ -357,39 +350,22 @@ public class MetaDumpMod {
 		writer.name("CanProvidePower");
 		writer.value(block.canProvidePower());
 
-		writer.name("LightOpacity");
-		writer.value(block.getLightOpacity());
-
-		writer.name("LightValue");
-		writer.value(block.getLightValue());
-
-		writer.name("IsOpaqueCube");
+				writer.name("IsOpaqueCube");
 		writer.value(block.isOpaqueCube());
 		
-		writer.name("IsNormalCube");
-		writer.value(block.isNormalCube());
-
-		writer.name("IsBlockNormalCube");
-		writer.value(block.isBlockNormalCube());
-
 		writer.name("IsCollidable");
 		writer.value(block.isCollidable());
 
 		writer.name("IsFlowerPot");
 		writer.value(block.isFlowerPot());
 
-		writer.name("UseNeighborBrightness");
-		writer.value(block.getUseNeighborBrightness());
-
 		writer.name("Material");
 		writer.beginObject();
-		writeMaterialProperties(writer, block.getMaterial());
+		writeMaterialProperties(writer, block.blockMaterial);
 		writer.endObject();
 
 		writer.name("Class");
 		writeClassArray(writer, block.getClass(), Block.class);
-
-		writeBlockMapColors(writer, block);
 	}
 
 	private void writeClassArray(JsonWriter writer, Class value, Class root)
@@ -421,7 +397,7 @@ public class MetaDumpMod {
 			throws IOException {
 		ArrayList<ItemStack> list = new ArrayList<ItemStack>();
 		try {
-			item.getSubItems(item, CreativeTabs.tabAllSearch, list);
+			item.getSubItems(item.itemID, CreativeTabs.tabAllSearch, list);
 		} catch (Exception e) {
 			writer.name("SubBlocksException");
 			writer.value(e.toString());
